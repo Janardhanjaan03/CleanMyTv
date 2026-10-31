@@ -1,9 +1,13 @@
 package com.gathin.tvhome;
 
 import android.content.res.Resources;
+import android.os.LocaleList;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -25,6 +29,12 @@ final class Festival {
 
     /** Pumpkin orange, Halloween's accent when the theme names no colour. */
     static final int PUMPKIN = 0xFFFF7A1A;
+
+    /** The festival with its own skin (tree, bell, Santa, snow on the first Home) instead of the diya's. */
+    static final String CHRISTMAS = "christmas";
+
+    /** Christmas red, that skin's accent when the theme names no colour. */
+    static final int CHRISTMAS_RED = 0xFFE0262F;
 
     /** Lower-case festival name, or "" for none. */
     final String name;
@@ -67,7 +77,7 @@ final class Festival {
     }
 
     /** The greeting to show while active, or "" to keep the normal time-of-day greeting. */
-    String greetingText(Resources res) {
+    String greetingText(Resources res, LocalDate today) {
         if (!greeting.isEmpty()) return greeting;
         switch (name) {
             case "dussehra":
@@ -76,6 +86,8 @@ final class Festival {
                 return res.getString(R.string.festival_diwali_greeting);
             case HALLOWEEN:
                 return res.getString(R.string.festival_halloween_greeting);
+            case CHRISTMAS:
+                return pick(res.getString(R.string.christmas_greetings), christmasSlot(today), locales(res));
             default:
                 return "";
         }
@@ -83,7 +95,53 @@ final class Festival {
 
     int accentColor() {
         if (accent != 0) return accent;
-        return isHalloween() ? PUMPKIN : DEFAULT_ACCENT;
+        return isHalloween() ? PUMPKIN : isChristmas() ? CHRISTMAS_RED : DEFAULT_ACCENT;
+    }
+
+    /**
+     * Which of the Christmas greetings a day gets: 0 Thanksgiving (4th Thursday of November), 1 8 Dec, 2 25 Dec,
+     * 3 26 Dec, 4 31 Dec, 5 1 Jan, 6 6 Jan, or -1 for any other day, which keeps the time-of-day greeting.
+     */
+    static int christmasSlot(LocalDate d) {
+        int m = d.getMonthValue(), day = d.getDayOfMonth();
+        if (m == 11 && d.getDayOfWeek() == DayOfWeek.THURSDAY && (day - 1) / 7 == 3) return 0;
+        if (m == 12) return day == 8 ? 1 : day == 25 ? 2 : day == 26 ? 3 : day == 31 ? 4 : -1;
+        return m == 1 ? (day == 1 ? 5 : day == 6 ? 6 : -1) : -1;
+    }
+
+    /**
+     * One greeting of a {@code |}-separated list, or "" when its slot is empty (a language with no real equivalent of
+     * that day), or when none of the device's locales is the language the list is written in (its last item): a
+     * language with no translation shows the English default, which keeps its time-of-day greeting instead. The
+     * locales are tried in order, as Android picks resources, so a TV set to [ru, it] still gets the Italian list.
+     * Thanksgiving (slot 0) only goes to an en-US locale.
+     */
+    static String pick(String packed, int slot, List<Locale> locales) {
+        String[] all = packed.split("\\|", -1);
+        if (slot < 0 || slot >= all.length - 1) return "";
+        String of = all[all.length - 1];
+        for (Locale l : locales) {
+            if (!legacy(l.getLanguage()).equals(of)) continue;
+            return slot == 0 && !"US".equals(l.getCountry()) ? "" : all[slot];
+        }
+        return "";
+    }
+
+    private static List<Locale> locales(Resources res) {
+        LocaleList list = res.getConfiguration().getLocales();
+        List<Locale> out = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) out.add(list.get(i));
+        return out;
+    }
+
+    /** Android's Locale still names Hebrew and Indonesian by their old codes, as the greeting lists do. */
+    private static String legacy(String language) {
+        return language.equals("he") ? "iw" : language.equals("id") ? "in" : language;
+    }
+
+    /** Whether this is the Christmas skin rather than the diya, bell and marigold. */
+    boolean isChristmas() {
+        return CHRISTMAS.equals(name);
     }
 
     /** Whether this is the Halloween skin rather than the diya, bell and marigold. */
